@@ -1,0 +1,203 @@
+
+#
+# These groups are read by MariaDB server.
+# Use it for options that only the server (but not clients) should see
+
+# this is read by the standalone daemon and embedded servers
+[server]
+
+# this is only for the mysqld standalone daemon
+[mysqld]
+
+#
+# * Basic Settings
+#
+
+#user                    = mysql
+pid-file                = /run/mysqld/mysqld.pid
+basedir                 = /usr
+#datadir                 = /var/lib/mysql
+tmpdir                  = /tmp
+
+# Broken reverse DNS slows down connections considerably and name resolve is
+# safe to skip if there are no "host by domain name" access grants
+#skip-name-resolve
+
+# Instead of skip-networking the default is now to listen only on
+# localhost which is more compatible and is not less secure.
+
+
+
+# 
+# * Tuning by THXNLO 
+#
+
+# Plugins (optional, remove if unnecessary)
+plugin_load_add = cgroup
+
+# Basic Paths
+#datadir = /var/lib/mysql
+#socket = /var/lib/mysql/mysql.sock
+#tmpdir = /var/lib/mysqltmp
+
+# Networking & Connections
+bind_address = 0.0.0.0
+max_connections = 2000
+max_user_connections = 75
+thread_cache_size = 300
+max_connect_errors = 5
+skip-name-resolve
+
+# Timeouts
+#interactive_timeout = 20
+#wait_timeout = 20
+#connect_timeout = 20
+
+# Storage Engines & Transaction Handling
+transaction-isolation = READ-COMMITTED
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+innodb_buffer_pool_size = 16G   # Adjust based on your RAM
+innodb_log_file_size = 2G
+innodb_log_buffer_size = 16M
+innodb_flush_neighbors = 0
+innodb_purge_threads = 4
+innodb_io_capacity = 300
+innodb_io_capacity_max = 2000
+innodb_read_io_threads = 16
+innodb_write_io_threads = 16
+innodb_change_buffering = changes
+innodb_change_buffer_max_size = 15
+innodb_thread_concurrency = 0
+innodb_file_per_table = 1
+innodb_buffer_pool_dump_pct = 90
+
+# MyISAM Tweaks
+key_buffer_size = 2G
+myisam_sort_buffer_size = 64M
+bulk_insert_buffer_size = 8M
+myisam_recover_options = backup,quick,force
+
+# Caching & Buffers
+query_cache_type = 0
+query_cache_size = 0
+tmp_table_size = 128M
+max_heap_table_size = 128M
+table_open_cache = 500000
+table_definition_cache = 2097152
+sort_buffer_size = 4M
+read_buffer_size = 4M
+read_rnd_buffer_size = 8M
+join_buffer_size = 8M
+aria_pagecache_buffer_size = 2G
+
+# Performance & Misc
+open_files_limit = 30000000
+#collation_server = utf8mb4_unicode_ci
+#character_set_server = utf8mb4
+log_warnings = 1
+sql_mode = NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+skip-character-set-client-handshake
+userstat = 1
+max_prepared_stmt_count = 100000
+in_predicate_conversion_threshold = 99999999
+group_concat_max_len = 10485760
+
+
+
+
+#
+# * Fine Tuning
+#
+
+#key_buffer_size        = 128M
+#max_allowed_packet     = 1G
+#thread_stack           = 192K
+#thread_cache_size      = 8
+# This replaces the startup script and checks MyISAM tables if needed
+# the first time they are touched
+#myisam_recover_options = BACKUP
+#max_connections        = 100
+#table_cache            = 64
+
+
+
+#
+# * Logging and Replication
+#
+
+# Note: The configured log file or its directory need to be created
+# and be writable by the mysql user, e.g.:
+# $ sudo mkdir -m 2750 /var/log/mysql
+# $ sudo chown mysql /var/log/mysql
+
+# Both location gets rotated by the cronjob.
+# Be aware that this log type is a performance killer.
+# Recommend only changing this at runtime for short testing periods if needed!
+#general_log_file       = /var/log/mysql/mysql.log
+#general_log            = 1
+
+# When running under systemd, error logging goes via stdout/stderr to journald
+# and when running legacy init error logging goes to syslog due to
+# /etc/mysql/conf.d/mariadb.conf.d/50-mysqld_safe.cnf
+# Enable this if you want to have error logging into a separate file
+#log_error = /var/log/mysql/error.log
+# Enable the slow query log to see queries with especially long duration
+#log_slow_query_file    = /var/log/mysql/mariadb-slow.log
+#log_slow_query_time    = 10
+#log_slow_verbosity     = query_plan,explain
+#log-queries-not-using-indexes
+#log_slow_min_examined_row_limit = 1000
+
+# The following can be used as easy to replay backup logs or for replication.
+# note: if you are setting up a replica, see README.Debian about other
+#       settings you may need to change.
+#server-id              = 1
+#log_bin                = /var/log/mysql/mysql-bin.log
+#expire_logs_days        = 10
+#max_binlog_size        = 100M
+
+#
+# * SSL/TLS
+#
+
+# For documentation, please read
+# https://mariadb.com/kb/en/securing-connections-for-client-and-server/
+#ssl-ca = /etc/mysql/cacert.pem
+#ssl-cert = /etc/mysql/server-cert.pem
+#ssl-key = /etc/mysql/server-key.pem
+#require-secure-transport = on
+
+#
+# * Character sets
+#
+
+# MySQL/MariaDB default is Latin1, but in Debian we rather default to the full
+# utf8 4-byte character set. See also client.cnf
+character-set-server  = utf8mb4
+collation-server      = utf8mb4_general_ci
+
+#
+# * InnoDB
+#
+
+# InnoDB is enabled by default with a 10MB datafile in /var/lib/mysql/.
+# Read the manual for more InnoDB related options. There are many!
+# Most important is to give InnoDB 80 % of the system RAM for buffer use:
+# https://mariadb.com/kb/en/innodb-system-variables/#innodb_buffer_pool_size
+#innodb_buffer_pool_size = 8G
+
+# this is only for embedded server
+[embedded]
+
+# This group is only read by MariaDB servers, not by MySQL.
+# If you use the same .cnf file for MySQL and MariaDB,
+# you can put MariaDB-only options here
+[mariadb]
+
+# This group is only read by MariaDB-10.11 servers.
+# If you use the same .cnf file for MariaDB of different versions,
+# use this group for options that older servers don't understand
+[mariadb-10.11]
+
+
