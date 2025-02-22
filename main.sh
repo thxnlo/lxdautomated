@@ -88,3 +88,7 @@ echo "========================================"
 echo " 🎉 WordPress site is live at: https://$DOMAIN 🎉"
 echo "========================================"
 echo -e "${RESET}"
+
+# Clear sensitive variables
+unset DB_ROOT_PASSWORD ADMIN_USER ADMIN_PASS ADMIN_EMAIL
+unset WP_CONTAINER_NAME DOMAIN DB_CONTAINER_NAME WP_SITE_NAME
