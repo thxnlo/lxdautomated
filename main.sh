@@ -40,8 +40,6 @@ DOMAIN=${DOMAIN:-example.com}
 # Hardcode DB container name to "db"
 DB_CONTAINER_NAME="db"
 
-read -p "Enter the password to set for MySQL root user: " DB_ROOT_PASSWORD
-
 # WordPress admin credentials
 read -p "Enter the WordPress admin username [admin]: " ADMIN_USER
 ADMIN_USER=${ADMIN_USER:-admin}
@@ -57,14 +55,14 @@ WP_SITE_NAME=$(echo "$DOMAIN" | cut -d'.' -f1)
 # ===========================
 # Step 1: Setup MySQL Container
 # ===========================
-echo -e "${YELLOW}📦 Setting up MySQL container...${RESET}"
-create_mysql_container "$DB_CONTAINER_NAME" "$DB_ROOT_PASSWORD" "$WP_SITE_NAME" "$WP_CONTAINER_NAME"
+echo -e "${YELLOW}📦 Setting up MySQL container: $DB_CONTAINER_NAME...${RESET}"
+create_mysql_container "$DB_CONTAINER_NAME" "$WP_SITE_NAME" "$WP_CONTAINER_NAME"
 echo -e "${GREEN}✅ MySQL setup complete!${RESET}"
 
 # ===========================
 # Step 2: Setup WordPress Container
 # ===========================
-echo -e "${YELLOW}🌐 Setting up WordPress container...${RESET}"
+echo -e "${YELLOW}🌐 Setting up WordPress container: $WP_CONTAINER_NAME...${RESET}"
 create_wordpress_container "$WP_CONTAINER_NAME" "$DOMAIN" "$DB_CONTAINER_NAME" "$ADMIN_USER" "$ADMIN_PASS" "$ADMIN_EMAIL"
 echo -e "${GREEN}✅ WordPress setup complete!${RESET}"
 
@@ -90,5 +88,5 @@ echo "========================================"
 echo -e "${RESET}"
 
 # Clear sensitive variables
-unset DB_ROOT_PASSWORD ADMIN_USER ADMIN_PASS ADMIN_EMAIL
+unset ADMIN_USER ADMIN_PASS ADMIN_EMAIL
 unset WP_CONTAINER_NAME DOMAIN DB_CONTAINER_NAME WP_SITE_NAME

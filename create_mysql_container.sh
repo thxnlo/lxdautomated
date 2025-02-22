@@ -20,7 +20,7 @@ spin() {
   local spinstr='|/-\'
   while ps -p $pid > /dev/null 2>&1; do
     printf " [%c]  " "$spinstr"
-    spinstr=$(echo $spinstr | tail -c 2)${spinstr%"${spinstr%"${spinstr%"${spinstr%"${spinstr:0:1}"}`"}
+    spinstr=$(echo $spinstr | tail -c 2)${spinstr%"${spinstr%"${spinstr%"${spinstr%"${spinstr:0:1}"}`" }
     sleep $delay
     printf "\r"
   done
@@ -37,6 +37,7 @@ generate_unique_db_name() {
   local suffix=1
   local unique_name="${base_name}_db"
 
+  # Check if the database name already exists and append a number to avoid overlap
   while lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "sudo mysql -e 'SHOW DATABASES LIKE \"$unique_name\";' | grep -q \"$unique_name\""; do
     unique_name="${base_name}_db_${suffix}"
     ((suffix++))
@@ -121,9 +122,13 @@ create_mysql_container() {
   lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "sudo mysql -e \"GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';\""
   lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "sudo mysql -e \"FLUSH PRIVILEGES;\""
 
-  # Save credentials to a file
-  echo -e "${YELLOW}📄 Saving credentials...${RESET}"
-  echo "$DB_NAME $DB_USER $DB_PASSWORD" > mysql_credentials.txt
+  # Save credentials to a separate file for the WordPress site
+  CREDENTIALS_FILE="./mysql_credentials_${WP_SITE_NAME}.txt"
+  echo -e "${YELLOW}📄 Saving credentials to ${CREDENTIALS_FILE}...${RESET}"
+  echo "$DB_NAME $DB_USER $DB_PASSWORD" > "$CREDENTIALS_FILE"
+
+  # Clear sensitive variables after saving
+  unset DB_NAME DB_USER DB_PASSWORD
 
   # Copy custom MariaDB configuration
   echo -e "${YELLOW}🔧 Copying custom MariaDB configuration...${RESET}"
