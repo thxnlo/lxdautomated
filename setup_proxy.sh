@@ -36,6 +36,10 @@ setup_proxy() {
     echo "Generating Nginx configuration from template..."
     lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "export WP_DOMAIN=$WP_DOMAIN WP_CONTAINER_NAME=$WP_CONTAINER_NAME && envsubst < /etc/nginx/templates/nginx_proxy_config.template > /etc/nginx/sites-available/$WP_DOMAIN" || { echo "Failed to generate Nginx configuration"; exit 1; }
 
+    lxc exec proxy -- bash -c "export WP_DOMAIN=testvps.localhost WP_CONTAINER_NAME=newsite3 && envsubst < /etc/nginx/templates/nginx_proxy_config.template > /etc/nginx/sites-available/$WP_DOMAIN" || { echo "Failed to generate Nginx configuration"; exit 1; }
+
+
+
     # Ensure the directory for sites-enabled exists
     echo "Ensuring /etc/nginx/sites-enabled exists..."
     lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "mkdir -p /etc/nginx/sites-enabled" || { echo "Failed to create /etc/nginx/sites-enabled directory"; exit 1; }
