@@ -17,7 +17,7 @@ RESET='\033[0m'
 spin() {
   local pid=$!
   local delay=0.1
-  local spinstr='|/-\'
+  local spinstr='|/-\' 
   while ps -p $pid > /dev/null 2>&1; do
     printf " [%c]  " "$spinstr"
     spinstr=$(echo $spinstr | tail -c 2)${spinstr%"${spinstr%"${spinstr%"${spinstr%"${spinstr:0:1}"}`" }
@@ -109,13 +109,13 @@ create_mysql_container() {
   DB_USER=$(generate_unique_db_user "$WP_SITE_NAME")
   DB_PASSWORD=$(generate_random_password)
 
-  # Display generated values
+  # Display generated values for debugging
   echo -e "${CYAN}Generated Database Details:${RESET}"
   echo -e "${GREEN}Database Name: $DB_NAME${RESET}"
   echo -e "${GREEN}Database User: $DB_USER${RESET}"
   echo -e "${GREEN}Database Password: $DB_PASSWORD${RESET}"
 
-  # Create database and user
+  # Create database and user (use `IF NOT EXISTS` to ensure they are created only if not already present)
   echo -e "${YELLOW}🛠 Creating database and user...${RESET}"
   lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "sudo mysql -e \"CREATE DATABASE IF NOT EXISTS $DB_NAME;\""
   lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "sudo mysql -e \"CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';\""
