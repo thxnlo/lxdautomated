@@ -79,7 +79,7 @@ echo -e "${GREEN}✅ Proxy setup complete!${RESET}"
 # Step 4: Setup SSL
 # ===========================
 echo -e "${YELLOW}🔒 Setting up SSL for $DOMAIN...${RESET}"
-setup_ssl "$DOMAIN"
+setup_ssl "$DOMAIN" "$WP_CONTAINER_NAME" "proxy"
 echo -e "${GREEN}✅ SSL setup complete!${RESET}"
 
 # Final Message

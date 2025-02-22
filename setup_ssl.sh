@@ -12,7 +12,7 @@ setup_ssl() {
 
   # Setup SSL using Certbot without showing output
   echo "Setting up SSL certificate for $DOMAIN..."
-  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN > /dev/null 2>&1"
+  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN"
 
   # Edit Nginx configuration to add proxy_protocol to SSL listen directives
   echo "Modifying Nginx configuration for SSL proxy_protocol..."
