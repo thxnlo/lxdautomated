@@ -98,7 +98,7 @@ lxc file push custom_mariadb.cnf db-container/etc/mysql/mariadb.conf.d/50-server
 lxc exec db-container -- sudo systemctl restart mariadb
 ```
 
-[View `custom_mariadb.cnf`](https://chatgpt.com/c/67ba2c04-eb74-8013-97bc-3313e754cc4f#)
+[View `custom_mariadb.cnf`](https://github.com/thxnlo/lxdautomated/blob/main/custom_mariadb.cnf)
 
 ---
 
