@@ -47,16 +47,26 @@ setup_ssl() {
     lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "
         if [ -f /etc/nginx/sites-enabled/$DOMAIN ]; then
             # Backup original configuration
-            cp /etc/nginx/sites-enabled/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN.bak
+            cp /etc/nginx/sites-enabled/$DOMAIN /etc/nginx/sites-available/$DOMAIN.bak
+            
             
             # Add proxy_protocol to SSL listen directives
             sed -i '/listen 443 ssl;/c\    listen 443 ssl proxy_protocol;' /etc/nginx/sites-enabled/$DOMAIN
-            sed -i '/listen \[::\]:443 ssl;/c\    listen [::]:443 ssl proxy_protocol;' /etc/nginx/sites-enabled/$DOMAIN
+
+            # Check if 'listen [::]:443 ssl;' exists
+            if grep -q 'listen \[::\]:443 ssl;' /etc/nginx/sites-enabled/$DOMAIN; then
+                sed -i '/listen \[::\]:443 ssl;/c\    listen [::]:443 ssl proxy_protocol;' /etc/nginx/sites-enabled/$DOMAIN
+            else
+                sed -i '/listen \[::\]:443 ssl ipv6only=on;/c\    listen [::]:443 ssl proxy_protocol ipv6only=on;' /etc/nginx/sites-enabled/$DOMAIN
+            fi
+
             
+
+
             # Test Nginx configuration
             if ! nginx -t; then
                 echo 'Error: Invalid Nginx configuration'
-                cp /etc/nginx/sites-enabled/$DOMAIN.bak /etc/nginx/sites-available/$DOMAIN
+                cp /etc/nginx/sites-available/$DOMAIN.bak /etc/nginx/sites-enabled/$DOMAIN
                 return 1
             fi
         else
