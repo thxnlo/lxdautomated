@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#file: create_wordpress_container.sh
+
 create_wordpress_container() {
   WP_CONTAINER_NAME=$1
   WP_DOMAIN=$2
@@ -24,22 +26,20 @@ create_wordpress_container() {
   NEW_CONTAINER_NAME="$WP_CONTAINER_NAME"
   
   while lxc info "$NEW_CONTAINER_NAME" >/dev/null 2>&1; do
-    # If container exists, increment the counter and try again with the new name
     COUNTER=$((COUNTER + 1))
-    
-    # Check if the counter exceeds 99 and reset to 1 (to keep it a two-digit number)
     if [ $COUNTER -gt 99 ]; then
       COUNTER=1
     fi
-    
-    # Create a new container name with two digits (e.g., "newsite06", "newsite07")
-    NEW_CONTAINER_NAME="${WP_CONTAINER_NAME}$(printf "%02d" $COUNTER)"
+    NEW_CONTAINER_NAME="${WP_CONTAINER_NAME}_$(printf "%02d" $COUNTER)"
   done
   
   echo "Creating WordPress container: $NEW_CONTAINER_NAME..."
 
   # Create WordPress container using Ubuntu 24.04
-  lxc launch ubuntu:24.04 "$NEW_CONTAINER_NAME"
+  if ! lxc launch ubuntu:24.04 "$NEW_CONTAINER_NAME"; then
+    echo "Error: Failed to create container $NEW_CONTAINER_NAME"
+    return 1
+  fi
 
   # Install dependencies
   echo "Installing dependencies..."
@@ -81,6 +81,10 @@ create_wordpress_container() {
   # Configure Nginx
   echo "Configuring Nginx..."
   lxc exec "$NEW_CONTAINER_NAME" -- sudo mkdir -p /etc/nginx/templates
+  if [[ ! -f "nginx_wp_config.template" ]]; then
+    echo "Error: nginx_wp_config.template not found!"
+    return 1
+  fi
   lxc file push nginx_wp_config.template "$NEW_CONTAINER_NAME/etc/nginx/templates/nginx_wp_config.template"
 
   # Generate Nginx config from template

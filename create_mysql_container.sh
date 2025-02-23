@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#file: create_mysql_container.sh
+
 generate_random_password() {
   tr -dc A-Za-z0-9 </dev/urandom | head -c 16
 }

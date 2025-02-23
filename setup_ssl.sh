@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#file: setup_ssl.sh
+
 setup_ssl() {
   DOMAIN=$1
   WP_CONTAINER_NAME=$2
@@ -7,12 +9,12 @@ setup_ssl() {
 
   # Install Certbot and Nginx plugin for Certbot without showing output
   echo "Installing Certbot and Nginx plugin for SSL..."
-  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "apt update -y > /dev/null 2>&1 && apt install -y software-properties-common > /dev/null 2>&1"
-  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "apt install -y certbot python3-certbot-nginx > /dev/null 2>&1"
+  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "apt update -y && apt install -y software-properties-common"
+  lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "apt install -y certbot python3-certbot-nginx"
 
-  # Setup SSL using Certbot without showing output
+  # Setup SSL using Certbot and capture output for debugging
   echo "Setting up SSL certificate for $DOMAIN..."
-  SSL_SETUP=$(lxc exec "$PROXY_CONTAINER_NAME" -- sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@"$DOMAIN" 2>&1)
+  SSL_SETUP=$(lxc exec "$PROXY_CONTAINER_NAME" -- sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@"$DOMAIN" --debug --verbose > /var/log/certbot.log 2>&1)
 
   # Check if SSL setup was successful
   if echo "$SSL_SETUP" | grep -q "Congratulations! Your certificate and chain have been saved"; then
@@ -41,7 +43,7 @@ setup_ssl() {
     echo "SSL certificate is successfully set up for $DOMAIN!"
   else
     echo "Error: SSL certificate setup failed for $DOMAIN."
-    echo "Details: $SSL_SETUP"
+    echo "Details: $(cat /var/log/certbot.log)"
     exit 1
   fi
 }

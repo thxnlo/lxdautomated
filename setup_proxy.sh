@@ -1,36 +1,73 @@
+# setup_proxy.sh
 #!/bin/bash
 
+# Remove .env sourcing since it's already done in main.sh
+
 setup_proxy() {
-  PROXY_CONTAINER_NAME=$1
-  WP_CONTAINER_NAME=$2
-  WP_DOMAIN=$3
-
-  # Check if proxy container exists
-  if ! lxc list | grep -q "$PROXY_CONTAINER_NAME"; then
-    echo "Creating proxy container..."
+    # Explicitly declare local variables with parameters
+    local PROXY_CONTAINER_NAME="$1"
+    local WP_CONTAINER_NAME="$2"
+    local WP_DOMAIN="$3"
     
-    # Create Proxy container using Ubuntu 24.04
-    lxc launch ubuntu:24.04 "$PROXY_CONTAINER_NAME" || { echo "Failed to create proxy container"; exit 1; }
+    # Debug output
+    echo "Debug: Variables received in setup_proxy:"
+    echo "PROXY_CONTAINER_NAME=$PROXY_CONTAINER_NAME"
+    echo "WP_CONTAINER_NAME=$WP_CONTAINER_NAME"
+    echo "WP_DOMAIN=$WP_DOMAIN"
+    
+    # Validation with better error messages
+    if [ -z "$PROXY_CONTAINER_NAME" ]; then
+        echo "Error: PROXY_CONTAINER_NAME is not set"
+        return 1
+    fi
 
-    # Install necessary packages
-    echo "Installing Nginx and dependencies in $PROXY_CONTAINER_NAME..."
-    lxc exec "$PROXY_CONTAINER_NAME" -- sudo apt update -y
-    lxc exec "$PROXY_CONTAINER_NAME" -- sudo apt install -y nginx gettext certbot python3-certbot-nginx || { echo "Failed to install required packages"; exit 1; }
-  else
-    echo "Proxy container $PROXY_CONTAINER_NAME already exists. Skipping creation."
-  fi
+    if [ -z "$WP_CONTAINER_NAME" ]; then
+        echo "Error: WP_CONTAINER_NAME is not set (received empty value)"
+        echo "Current global value: $WP_CONTAINER_GLOBAL"
+        return 1
+    fi
 
-  # Ensure the templates directory exists
-  echo "Ensuring /etc/nginx/templates directory exists..."
-  lxc exec "$PROXY_CONTAINER_NAME" -- sudo mkdir -p /etc/nginx/templates
+    if [ -z "$WP_DOMAIN" ]; then
+        echo "Error: WP_DOMAIN is not set (received empty value)"
+        echo "Current global value: $DOMAIN_GLOBAL"
+        return 1
+    fi
 
-  # Push nginx_proxy_config.template to the container
-  echo "Pushing nginx_proxy_config.template to proxy container..."
-  lxc file push nginx_proxy_config.template "$PROXY_CONTAINER_NAME/etc/nginx/templates/nginx_proxy_config.template" || { echo "Failed to push nginx_proxy_config.template"; exit 1; }
+    # Debug output
+    echo "Debug: Setting up proxy with:"
+    echo "PROXY_CONTAINER_NAME=$PROXY_CONTAINER_NAME"
+    echo "WP_CONTAINER_NAME=$WP_CONTAINER_NAME"
+    echo "WP_DOMAIN=$WP_DOMAIN"
 
-  # Ensure template file exists
-  echo "Checking if Nginx template file exists..."
-  lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "[ -f /etc/nginx/templates/nginx_proxy_config.template ] || { echo 'Missing nginx_proxy_config.template'; exit 1; }"
+    # Add or update DNS record in Cloudflare before creating or checking proxy container
+    add_cloudflare_record "$WP_DOMAIN" "$CLOUDFLARE_API" "$MY_SERVER_IP"
+
+    # Check if proxy container exists
+    if ! lxc list | grep -q "$PROXY_CONTAINER_NAME"; then
+        echo "Creating proxy container..."
+        
+        # Create Proxy container using Ubuntu 24.04
+        lxc launch ubuntu:24.04 "$PROXY_CONTAINER_NAME" || { echo "Failed to create proxy container"; exit 1; }
+
+        # Install necessary packages
+        echo "Installing Nginx and dependencies in $PROXY_CONTAINER_NAME..."
+        lxc exec "$PROXY_CONTAINER_NAME" -- sudo apt update -y
+        lxc exec "$PROXY_CONTAINER_NAME" -- sudo apt install -y nginx gettext certbot python3-certbot-nginx || { echo "Failed to install required packages"; exit 1; }
+    else
+        echo "Proxy container $PROXY_CONTAINER_NAME already exists. Skipping creation."
+    fi
+
+    # Ensure the templates directory exists
+    echo "Ensuring /etc/nginx/templates directory exists..."
+    lxc exec "$PROXY_CONTAINER_NAME" -- sudo mkdir -p /etc/nginx/templates
+
+    # Push nginx_proxy_config.template to the container
+    echo "Pushing nginx_proxy_config.template to proxy container..."
+    lxc file push nginx_proxy_config.template "$PROXY_CONTAINER_NAME/etc/nginx/templates/nginx_proxy_config.template" || { echo "Failed to push nginx_proxy_config.template"; exit 1; }
+
+    # Ensure template file exists
+    echo "Checking if Nginx template file exists..."
+    lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "[ -f /etc/nginx/templates/nginx_proxy_config.template ] || { echo 'Missing nginx_proxy_config.template'; exit 1; }"
 
   # Generate the Nginx config using envsubst
   echo "Generating Nginx configuration from template..."

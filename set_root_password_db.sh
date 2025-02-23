@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#file: set_root_password_db.sh
+
 # Function to set root password in the database container
 set_root_password_db() {
   container=$1
