@@ -1,18 +1,96 @@
 server {
     listen 80;
+    listen [::]:80;
     server_name ${WP_DOMAIN};
     root /var/www/html;
-    index index.php index.html index.htm;
+    index index.php;
 
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Deny access to sensitive files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # WordPress permalinks and core functionality
     location / {
         try_files $uri $uri/ /index.php?$args;
     }
 
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
+    # Cache static files
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires max;
+        add_header Cache-Control "public, no-transform";
+        log_not_found off;
     }
-}
 
+    # Deny access to sensitive WordPress files
+    location ~* ^/(?:wp-config\.php|wp-includes/.*?\.php|wp-admin/includes/.*?\.php|wp-content/uploads/.*?\.php)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Deny access to uploads directory PHP files
+    location ~* /(?:uploads|files)/.*\.php$ {
+        deny all;
+    }
+
+    # Handle PHP files
+    location ~ \.php$ {
+        # Verify PHP file exists before passing to FastCGI
+        try_files $uri =404;
+        
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        #include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        
+        # FastCGI params
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        include fastcgi_params;
+        
+        # FastCGI cache settings
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+        
+        # Timeouts
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 180s;
+        fastcgi_read_timeout 180s;
+    }
+
+    # WordPress admin
+    location /wp-admin {
+        location ~ \.php$ {
+            try_files $uri =404;
+            #include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            include fastcgi_params;
+        }
+    }
+
+    # Deny direct access to these files
+    location ~* \.(log|git|zip|tar|rar)$ {
+        deny all;
+    }
+
+    # Return 404 for non-static files in /wp-content/uploads
+    location ~* ^/wp-content/uploads/.*\.(php|phtml|pl|py|jsp|asp|html|htm|shtml|sh|cgi)$ {
+        return 404;
+    }
+
+    # XML-RPC - uncomment to disable
+    #location /xmlrpc.php {
+    #    deny all;
+    #    access_log off;
+    #    log_not_found off;
+    #}
+}

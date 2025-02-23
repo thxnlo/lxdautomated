@@ -23,6 +23,33 @@ create_wordpress_container() {
     echo "Domain: $WP_DOMAIN"
     echo "DB Container: $DB_CONTAINER_NAME"
 
+    get_php_fpm_version() {
+        local container_name="$1"
+        local php_version
+
+        # Get version from installed php-fpm package
+        php_version=$(lxc exec "$container_name" -- apt-cache policy php8.3-fpm | grep -oP 'Installed: \K[0-9]+\.[0-9]+' || true)
+
+        # If 8.3 not found, try 8.2
+        if [ -z "$php_version" ]; then
+            php_version=$(lxc exec "$container_name" -- apt-cache policy php8.2-fpm | grep -oP 'Installed: \K[0-9]+\.[0-9]+' || true)
+        fi
+
+        # If 8.2 not found, try 8.1
+        if [ -z "$php_version" ]; then
+            php_version=$(lxc exec "$container_name" -- apt-cache policy php8.1-fpm | grep -oP 'Installed: \K[0-9]+\.[0-9]+' || true)
+        fi
+
+        # If version found, return it
+        if [ -n "$php_version" ]; then
+            echo "$php_version"
+            return 0
+        else
+            echo "Error: No PHP-FPM package found" >&2
+            return 1
+        fi
+    }
+
     # Read database credentials
     if [[ -f "mysql_credentials.txt" ]]; then
         if ! read -r DB_NAME DB_USER DB_PASSWORD < mysql_credentials.txt; then
@@ -61,6 +88,7 @@ create_wordpress_container() {
     # Wait for container to be ready
     echo "Waiting for container to be ready..."
     sleep 10
+    
 
     # Install dependencies with progress feedback
     echo "Installing dependencies..."
@@ -72,6 +100,14 @@ create_wordpress_container() {
         echo "Error: Failed to install dependencies"
         return 1
     fi
+
+    # Get PHP-FPM version after installation
+    PHP_VERSION=$(get_php_fpm_version "$NEW_CONTAINER_NAME")
+    if [ -z "$PHP_VERSION" ]; then
+        echo "Error: Could not detect PHP-FPM version"
+        return 1
+    fi
+    echo "Detected PHP-FPM version: $PHP_VERSION"
 
     # Install Redis
     echo "Installing Redis..."
@@ -171,7 +207,7 @@ create_wordpress_container() {
         echo "Warning: fix_permissions function not found, skipping..."
     fi
 
-    # Configure Nginx
+    # Configure Nginx with dynamic PHP version
     echo "Configuring Nginx..."
     if [[ ! -f "nginx_wp_config.template" ]]; then
         echo "Error: nginx_wp_config.template not found!"
@@ -188,10 +224,11 @@ create_wordpress_container() {
         return 1
     fi
 
-    # Generate and validate Nginx config
+    # Generate and validate Nginx config with dynamic PHP version
     if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
         export WP_DOMAIN='$WP_DOMAIN'
-        envsubst '\$WP_DOMAIN' < /etc/nginx/templates/nginx_wp_config.template > /etc/nginx/sites-available/default &&
+        export PHP_VERSION='$PHP_VERSION'
+        envsubst '\$WP_DOMAIN \$PHP_VERSION' < /etc/nginx/templates/nginx_wp_config.template > /etc/nginx/sites-available/default &&
         ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/ &&
         nginx -t
     "; then
