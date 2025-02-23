@@ -1,106 +1,94 @@
 #!/bin/bash
 
 
+#file: setup_ssl.sh
+
 setup_ssl() {
     local DOMAIN="$1"
     local WP_CONTAINER_NAME="${2:-wordpress-site}"  # Default if not provided
     local PROXY_CONTAINER_NAME="${3:-proxy}"        # Default if not provided
-    local NGINX_CONFIG="/etc/nginx/sites-enabled/$DOMAIN"
-    local NGINX_BACKUP="/etc/nginx/sites-available/$DOMAIN.bak"
 
-    # Input validation
+    # Validate inputs
     if [ -z "$DOMAIN" ]; then
         echo "Error: Domain name is required"
         return 1
     fi
 
-    # Verify container exists
-    if ! lxc info "$PROXY_CONTAINER_NAME" >/dev/null 2>&1; then
-        echo "Error: Container $PROXY_CONTAINER_NAME does not exist"
-        return 1
-    }
-
-    echo "Starting SSL setup for domain: $DOMAIN"
-    echo "Using proxy container: $PROXY_CONTAINER_NAME"
+    echo "Debug: Setting up SSL with:"
+    echo "DOMAIN=$DOMAIN"
+    echo "PROXY_CONTAINER_NAME=$PROXY_CONTAINER_NAME"
 
     # Install Certbot and dependencies
-    echo "Installing Certbot and Nginx plugin..."
-    if ! lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -y && 
-        apt-get install -y certbot python3-certbot-nginx
-    "; then
-        echo "Error: Failed to install required packages"
+    echo "Installing Certbot and Nginx plugin for SSL..."
+    if ! lxc exec "$PROXY_CONTAINER_NAME" -- apt update -y; then
+        echo "Error: Failed to update package list"
+        return 1
+    fi
+
+    if ! lxc exec "$PROXY_CONTAINER_NAME" -- apt install -y certbot python3-certbot-nginx; then
+        echo "Error: Failed to install Certbot"
         return 1
     fi
 
     # Setup SSL using Certbot
-    echo "Obtaining SSL certificate for $DOMAIN..."
+    echo "Setting up SSL certificate for $DOMAIN..."
     if ! lxc exec "$PROXY_CONTAINER_NAME" -- certbot --nginx \
         -d "$DOMAIN" \
         --non-interactive \
         --agree-tos \
         --email "admin@$DOMAIN" \
-        --redirect \
-        --keep-until-expiring \
-        --rsa-key-size 4096; then
+        --redirect; then
         echo "Error: SSL certificate setup failed"
         return 1
     fi
 
-    # Modify Nginx configuration
-    echo "Configuring Nginx for SSL proxy_protocol..."
-    if ! lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "
-        if [ ! -f '$NGINX_CONFIG' ]; then
+    # Modify Nginx configuration for SSL proxy_protocol
+    echo "Modifying Nginx configuration for SSL proxy_protocol..."
+    lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "
+        if [ -f /etc/nginx/sites-enabled/$DOMAIN ]; then
+            # Backup original configuration
+            cp /etc/nginx/sites-enabled/$DOMAIN /etc/nginx/sites-available/$DOMAIN.bak
+            
+            
+            # Add proxy_protocol to SSL listen directives
+            sed -i '/listen 443 ssl;/c\    listen 443 ssl proxy_protocol;' /etc/nginx/sites-enabled/$DOMAIN
+
+            # Check if 'listen [::]:443 ssl;' exists
+            if grep -q 'listen \[::\]:443 ssl;' /etc/nginx/sites-enabled/$DOMAIN; then
+                sed -i '/listen \[::\]:443 ssl;/c\    listen [::]:443 ssl proxy_protocol;' /etc/nginx/sites-enabled/$DOMAIN
+            else
+                sed -i '/listen \[::\]:443 ssl ipv6only=on;/c\    listen [::]:443 ssl proxy_protocol ipv6only=on;' /etc/nginx/sites-enabled/$DOMAIN
+            fi
+
+            
+
+
+            # Test Nginx configuration
+            if ! nginx -t; then
+                echo 'Error: Invalid Nginx configuration'
+                cp /etc/nginx/sites-available/$DOMAIN.bak /etc/nginx/sites-enabled/$DOMAIN
+                return 1
+            fi
+        else
             echo 'Error: Nginx configuration file not found'
             return 1
         fi
-
-        # Create backup
-        cp '$NGINX_CONFIG' '$NGINX_BACKUP'
-
-        # Update SSL configuration with proxy_protocol
-        sed -i '
-            /listen 443 ssl;/c\    listen 443 ssl proxy_protocol;
-            /listen \[::\]:443 ssl;/c\    listen [::]:443 ssl proxy_protocol;
-            /listen \[::\]:443 ssl ipv6only=on;/c\    listen [::]:443 ssl proxy_protocol ipv6only=on;
-        ' '$NGINX_CONFIG'
-
-        # Add real IP configuration if not present
-        if ! grep -q 'set_real_ip_from' '$NGINX_CONFIG'; then
-            sed -i '/server {/a \    set_real_ip_from 10.0.0.0/8;\n    set_real_ip_from 172.16.0.0/12;\n    set_real_ip_from 192.168.0.0/16;\n    real_ip_header proxy_protocol;' '$NGINX_CONFIG'
-        fi
-
-        # Validate configuration
-        if ! nginx -t; then
-            echo 'Error: Invalid Nginx configuration'
-            cp '$NGINX_BACKUP' '$NGINX_CONFIG'
-            return 1
-        fi
-    "; then
-        echo "Error: Failed to update Nginx configuration"
-        return 1
-    fi
+    "
 
     # Reload Nginx
-    echo "Applying new configuration..."
+    echo "Reloading Nginx to apply SSL and proxy_protocol changes..."
     if ! lxc exec "$PROXY_CONTAINER_NAME" -- systemctl reload nginx; then
         echo "Error: Failed to reload Nginx"
         return 1
     fi
 
-    # Setup auto-renewal with pre/post hooks
-    echo "Configuring automatic renewal..."
+    # Setup auto-renewal
+    echo "Setting up SSL certificate renewal cron job..."
     lxc exec "$PROXY_CONTAINER_NAME" -- bash -c "
-        cat > /etc/cron.d/certbot-renew << 'EOF'
-0 0,12 * * * root certbot renew --quiet --pre-hook 'systemctl stop nginx' --post-hook 'systemctl start nginx' --deploy-hook 'systemctl reload nginx'
-EOF
+        echo '0 0,12 * * * root certbot renew --quiet && systemctl reload nginx' > /etc/cron.d/certbot-renew
         chmod 644 /etc/cron.d/certbot-renew
     "
 
-    echo "✅ SSL setup completed successfully for $DOMAIN"
-    echo "  - Certificate installed and configured"
-    echo "  - Automatic renewal configured"
-    echo "  - Proxy protocol enabled"
+    echo "✅ SSL certificate successfully set up for $DOMAIN!"
     return 0
 }

@@ -173,23 +173,45 @@ create_wordpress_container() {
         return 1
     fi
 
-    # Add Redis configuration to wp-config.php
-    echo "Adding Redis configuration to wp-config.php..."
+     # Install and configure Redis plugin
+    echo "Installing and configuring Redis Object Cache plugin..."
     if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
-        wp config set WP_CACHE_KEY_SALT '$WP_DOMAIN' --path=/var/www/html --allow-root &&
-        wp config set WP_REDIS_HOST 'localhost' --path=/var/www/html --allow-root &&
-        wp config set WP_REDIS_PORT '6379' --path=/var/www/html --allow-root &&
-        wp config set WP_CACHE true --path=/var/www/html --allow-root
+        cd /var/www/html &&
+        # Download and install the plugin
+        wp plugin install redis-cache --activate --allow-root &&
+        
+        # Add Redis configuration to wp-config.php if not already present
+        wp config set WP_CACHE_KEY_SALT '$WP_DOMAIN' --add --allow-root &&
+        wp config set WP_REDIS_HOST 'localhost' --add --allow-root &&
+        wp config set WP_REDIS_PORT '6379' --add --allow-root &&
+        wp config set WP_REDIS_TIMEOUT '1' --add --allow-root &&
+        wp config set WP_REDIS_READ_TIMEOUT '1' --add --allow-root &&
+        wp config set WP_REDIS_DATABASE '0' --add --allow-root &&
+        wp config set WP_CACHE true --add --allow-root &&
+        
+        # Enable Redis cache
+        wp redis enable --allow-root
     "; then
-        echo "Error: Failed to add Redis configuration"
-        return 1
+        echo "Warning: Redis plugin installation or configuration failed"
+        # Don't return 1 here as this is not critical for basic WordPress functionality
+    fi
+
+    # Verify Redis is working
+    echo "Verifying Redis connection..."
+    if lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
+        cd /var/www/html &&
+        wp redis status --allow-root | grep -q 'Status: Connected'
+    "; then
+        echo "✅ Redis cache is connected and working"
+    else
+        echo "Warning: Redis cache is not connected. Please check Redis configuration"
     fi
 
     # Install WordPress
     echo "Installing WordPress..."
     if ! lxc exec "$NEW_CONTAINER_NAME" -- wp core install \
         --path=/var/www/html \
-        --url="https://$WP_DOMAIN" \
+        --url="http://$WP_DOMAIN" \
         --title="$WP_DOMAIN" \
         --admin_user="$ADMIN_USER" \
         --admin_password="$ADMIN_PASS" \
@@ -198,6 +220,8 @@ create_wordpress_container() {
         echo "Error: Failed to install WordPress"
         return 1
     fi
+
+
 
     # Fix permissions
     echo "Setting correct permissions..."
