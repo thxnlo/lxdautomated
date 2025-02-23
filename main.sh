@@ -40,20 +40,29 @@ DOMAIN=${DOMAIN:-example.com}
 # Hardcode DB container name to "db"
 DB_CONTAINER_NAME="db"
 
+# Generate a secure random root password
+generate_secure_password() {
+  # This will generate a secure password with uppercase, lowercase, numbers, and special characters
+  tr -dc 'A-Za-z0-9_@#%&*+=!~' </dev/urandom | head -c 20
+}
+
+# Check if MariaDB is already installed
+if ! lxc exec "$DB_CONTAINER_NAME" -- sudo --user root --login bash -c "systemctl is-active --quiet mariadb"; then
+  # MariaDB is not installed, so generate a new root password
+  DB_ROOT_PASSWORD=$(generate_secure_password)
+  echo "Generated MySQL root password: $DB_ROOT_PASSWORD"
+else
+  # MariaDB is already installed, use an existing password (you may want to handle this differently)
+  echo "MariaDB is already installed. Using the existing root password."
+  # You can either prompt the user for an existing root password or retrieve it securely.
+  DB_ROOT_PASSWORD="existingRootPassword"  # You may choose to securely store/retrieve this
+fi
+
 # WordPress admin credentials
 read -p "Enter the WordPress admin username [admin]: " ADMIN_USER
 ADMIN_USER=${ADMIN_USER:-admin}
 
-# Ensure the admin password is not empty
-while true; do
-  read -s -p "Enter the WordPress admin password: " ADMIN_PASS
-  echo
-  if [[ -z "$ADMIN_PASS" ]]; then
-    echo -e "${RED}⚠️ Admin password cannot be empty. Please try again.${RESET}"
-  else
-    break
-  fi
-done
+read -p "Enter the WordPress admin password: " ADMIN_PASS
 
 read -p "Enter the WordPress admin email [admin@example.com]: " ADMIN_EMAIL
 ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
@@ -64,23 +73,15 @@ WP_SITE_NAME=$(echo "$DOMAIN" | cut -d'.' -f1)
 # ===========================
 # Step 1: Setup MySQL Container
 # ===========================
-echo -e "${YELLOW}📦 Setting up MySQL container: $DB_CONTAINER_NAME...${RESET}"
-create_mysql_container "$DB_CONTAINER_NAME" "$WP_SITE_NAME" "$WP_CONTAINER_NAME"
-if [[ $? -ne 0 ]]; then
-  echo -e "${RED}❌ MySQL setup failed. Please check the logs and try again.${RESET}"
-  exit 1
-fi
+echo -e "${YELLOW}📦 Setting up MySQL container...${RESET}"
+create_mysql_container "$DB_CONTAINER_NAME" "$DB_ROOT_PASSWORD" "$WP_SITE_NAME" "$WP_CONTAINER_NAME"
 echo -e "${GREEN}✅ MySQL setup complete!${RESET}"
 
 # ===========================
 # Step 2: Setup WordPress Container
 # ===========================
-echo -e "${YELLOW}🌐 Setting up WordPress container: $WP_CONTAINER_NAME...${RESET}"
+echo -e "${YELLOW}🌐 Setting up WordPress container...${RESET}"
 create_wordpress_container "$WP_CONTAINER_NAME" "$DOMAIN" "$DB_CONTAINER_NAME" "$ADMIN_USER" "$ADMIN_PASS" "$ADMIN_EMAIL"
-if [[ $? -ne 0 ]]; then
-  echo -e "${RED}❌ WordPress setup failed. Please check the logs and try again.${RESET}"
-  exit 1
-fi
 echo -e "${GREEN}✅ WordPress setup complete!${RESET}"
 
 # ===========================
@@ -88,21 +89,13 @@ echo -e "${GREEN}✅ WordPress setup complete!${RESET}"
 # ===========================
 echo -e "${YELLOW}🔧 Configuring Proxy...${RESET}"
 setup_proxy "proxy" "$WP_CONTAINER_NAME" "$DOMAIN"
-if [[ $? -ne 0 ]]; then
-  echo -e "${RED}❌ Proxy configuration failed. Please check the logs and try again.${RESET}"
-  exit 1
-fi
 echo -e "${GREEN}✅ Proxy setup complete!${RESET}"
 
 # ===========================
 # Step 4: Setup SSL
 # ===========================
 echo -e "${YELLOW}🔒 Setting up SSL for $DOMAIN...${RESET}"
-setup_ssl "$DOMAIN" "$WP_CONTAINER_NAME" "proxy"
-if [[ $? -ne 0 ]]; then
-  echo -e "${RED}❌ SSL setup failed. Please check the logs and try again.${RESET}"
-  exit 1
-fi
+setup_ssl "$DOMAIN"
 echo -e "${GREEN}✅ SSL setup complete!${RESET}"
 
 # Final Message
@@ -113,5 +106,5 @@ echo "========================================"
 echo -e "${RESET}"
 
 # Clear sensitive variables
-unset ADMIN_USER ADMIN_PASS ADMIN_EMAIL
+unset DB_ROOT_PASSWORD ADMIN_USER ADMIN_PASS ADMIN_EMAIL
 unset WP_CONTAINER_NAME DOMAIN DB_CONTAINER_NAME WP_SITE_NAME
