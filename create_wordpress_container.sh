@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#file: create_wordpress_container.sh
+
 create_wordpress_container() {
     local WP_CONTAINER_NAME="$1"
     local WP_DOMAIN="$2"

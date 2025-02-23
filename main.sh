@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+#file: main.sh
+
 # ===========================
 # WordPress Auto Deployment
 # ===========================

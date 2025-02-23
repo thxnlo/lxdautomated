@@ -1,7 +1,7 @@
-# setup_proxy.sh
+
 #!/bin/bash
 
-# Remove .env sourcing since it's already done in main.sh
+#file: setup_proxy.sh
 
 setup_proxy() {
     # Explicitly declare local variables with parameters

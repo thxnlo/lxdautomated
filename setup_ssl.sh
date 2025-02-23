@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+#file: setup_ssl.sh
+
 setup_ssl() {
     local DOMAIN="$1"
     local WP_CONTAINER_NAME="${2:-wordpress-site}"  # Default if not provided
