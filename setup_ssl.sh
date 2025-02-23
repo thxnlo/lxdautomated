@@ -12,7 +12,7 @@ setup_ssl() {
 
   # Setup SSL using Certbot without showing output
   echo "Setting up SSL certificate for $DOMAIN..."
-  SSL_SETUP=$(lxc exec "$PROXY_CONTAINER_NAME" -- sudo --user root --login bash -c "certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN 2>&1")
+  SSL_SETUP=$(lxc exec "$PROXY_CONTAINER_NAME" -- sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@"$DOMAIN" 2>&1)
 
   # Check if SSL setup was successful
   if echo "$SSL_SETUP" | grep -q "Congratulations! Your certificate and chain have been saved"; then
