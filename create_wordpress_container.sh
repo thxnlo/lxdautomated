@@ -67,9 +67,25 @@ create_wordpress_container() {
     if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
         export DEBIAN_FRONTEND=noninteractive
         apt update -y && 
-        apt install -y nginx php8.3-fpm php8.3-mysql php8.3-xml php8.3-mbstring mariadb-client curl wget unzip
+        apt install -y nginx php8.3-fpm php8.3-mysql php8.3-xml php8.3-mbstring mariadb-client curl wget unzip php8.3-redis
     "; then
         echo "Error: Failed to install dependencies"
+        return 1
+    fi
+
+    # Install Redis
+    echo "Installing Redis..."
+    if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
+        apt-get install -y lsb-release curl gpg &&
+        curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg &&
+        chmod 644 /usr/share/keyrings/redis-archive-keyring.gpg &&
+        echo 'deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb '$(lsb_release -cs)' main' | tee /etc/apt/sources.list.d/redis.list &&
+        apt-get update &&
+        apt-get install -y redis &&
+        systemctl enable redis-server &&
+        systemctl start redis-server
+    "; then
+        echo "Error: Failed to install and configure Redis"
         return 1
     fi
 
@@ -108,7 +124,7 @@ create_wordpress_container() {
         return 1
     fi
 
-    # Create wp-config.php
+    # Create wp-config.php with Redis configuration
     echo "Creating WordPress configuration..."
     if ! lxc exec "$NEW_CONTAINER_NAME" -- wp config create \
         --path=/var/www/html \
@@ -118,6 +134,18 @@ create_wordpress_container() {
         --dbhost="$DB_CONTAINER_NAME.lxd" \
         --allow-root; then
         echo "Error: Failed to create wp-config.php"
+        return 1
+    fi
+
+    # Add Redis configuration to wp-config.php
+    echo "Adding Redis configuration to wp-config.php..."
+    if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
+        wp config set WP_CACHE_KEY_SALT '$WP_DOMAIN' --path=/var/www/html --allow-root &&
+        wp config set WP_REDIS_HOST 'localhost' --path=/var/www/html --allow-root &&
+        wp config set WP_REDIS_PORT '6379' --path=/var/www/html --allow-root &&
+        wp config set WP_CACHE true --path=/var/www/html --allow-root
+    "; then
+        echo "Error: Failed to add Redis configuration"
         return 1
     fi
 
@@ -182,6 +210,7 @@ create_wordpress_container() {
     echo "WordPress URL: https://$WP_DOMAIN"
     echo "Admin URL: https://$WP_DOMAIN/wp-admin"
     echo "Admin Username: $ADMIN_USER"
+    echo "Redis Status: Installed and configured"
     
     # Export the new container name for other scripts to use
     export WP_CONTAINER_NAME="$NEW_CONTAINER_NAME"
