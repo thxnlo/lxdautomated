@@ -56,7 +56,7 @@ setup_ssl() {
             # Test Nginx configuration
             if ! nginx -t; then
                 echo 'Error: Invalid Nginx configuration'
-                cp /etc/nginx/sites-enabled/$DOMAIN.bak /etc/nginx/sites-enabled/$DOMAIN
+                cp /etc/nginx/sites-enabled/$DOMAIN.bak /etc/nginx/sites-available/$DOMAIN
                 return 1
             fi
         else
