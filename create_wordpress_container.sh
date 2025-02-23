@@ -189,17 +189,6 @@ create_wordpress_container() {
     fi
 
     
-
-
-    # Fix permissions
-    echo "Setting correct permissions..."
-    if type fix_permissions >/dev/null 2>&1; then
-        fix_permissions "$NEW_CONTAINER_NAME"
-    else
-        echo "Warning: fix_permissions function not found, skipping..."
-    fi
-
-    
      # Install and configure Redis plugin
     echo "Installing and configuring Redis Object Cache plugin..."
     if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
@@ -233,6 +222,16 @@ create_wordpress_container() {
     else
         echo "Warning: Redis cache is not connected. Please check Redis configuration"
     fi
+
+
+    # Fix permissions
+    echo "Setting correct permissions..."
+    if type fix_permissions >/dev/null 2>&1; then
+        fix_permissions "$NEW_CONTAINER_NAME"
+    else
+        echo "Warning: fix_permissions function not found, skipping..."
+    fi
+
 
     # Configure Nginx with dynamic PHP version
     echo "Configuring Nginx..."
