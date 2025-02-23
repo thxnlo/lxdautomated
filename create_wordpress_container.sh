@@ -19,35 +19,46 @@ create_wordpress_container() {
     echo ""
   fi
 
-  # Check if WordPress container exists
-  if lxc info "$WP_CONTAINER_NAME" >/dev/null 2>&1; then
-    echo "Container $WP_CONTAINER_NAME already exists. Skipping creation."
-    return
-  fi
-
-  echo "Creating WordPress container: $WP_CONTAINER_NAME..."
+  # Check if WordPress container exists, and if it does, create a new container name with incremental numbering
+  COUNTER=1
+  NEW_CONTAINER_NAME="$WP_CONTAINER_NAME"
+  
+  while lxc info "$NEW_CONTAINER_NAME" >/dev/null 2>&1; do
+    # If container exists, increment the counter and try again with the new name
+    COUNTER=$((COUNTER + 1))
+    
+    # Check if the counter exceeds 99 and reset to 1 (to keep it a two-digit number)
+    if [ $COUNTER -gt 99 ]; then
+      COUNTER=1
+    fi
+    
+    # Create a new container name with two digits (e.g., "newsite06", "newsite07")
+    NEW_CONTAINER_NAME="${WP_CONTAINER_NAME}$(printf "%02d" $COUNTER)"
+  done
+  
+  echo "Creating WordPress container: $NEW_CONTAINER_NAME..."
 
   # Create WordPress container using Ubuntu 24.04
-  lxc launch ubuntu:24.04 "$WP_CONTAINER_NAME"
+  lxc launch ubuntu:24.04 "$NEW_CONTAINER_NAME"
 
   # Install dependencies
   echo "Installing dependencies..."
-  lxc exec "$WP_CONTAINER_NAME" -- sudo apt update -y > /dev/null 2>&1
-  lxc exec "$WP_CONTAINER_NAME" -- sudo apt install -y nginx php8.3-fpm php8.3-mysql php8.3-xml php8.3-mbstring mariadb-client curl wget unzip > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo apt update -y > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo apt install -y nginx php8.3-fpm php8.3-mysql php8.3-xml php8.3-mbstring mariadb-client curl wget unzip > /dev/null 2>&1
 
   # Install WP-CLI
   echo "Installing WP-CLI..."
-  lxc exec "$WP_CONTAINER_NAME" -- curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar > /dev/null 2>&1
-  lxc exec "$WP_CONTAINER_NAME" -- chmod +x wp-cli.phar
-  lxc exec "$WP_CONTAINER_NAME" -- sudo mv wp-cli.phar /usr/local/bin/wp
+  lxc exec "$NEW_CONTAINER_NAME" -- curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- chmod +x wp-cli.phar
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo mv wp-cli.phar /usr/local/bin/wp
 
   # Create /var/www/html directory
-  lxc exec "$WP_CONTAINER_NAME" -- sudo mkdir -p /var/www/html
-  lxc exec "$WP_CONTAINER_NAME" -- sudo chown -R www-data:www-data /var/www/html
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo mkdir -p /var/www/html
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo chown -R www-data:www-data /var/www/html
 
   # Download and install WordPress
   echo "Downloading WordPress..."
-  lxc exec "$WP_CONTAINER_NAME" -- wp core download --path=/var/www/html --allow-root > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- wp core download --path=/var/www/html --allow-root > /dev/null 2>&1
 
   # Verify database connectivity before proceeding
   echo "Checking database connection..."
@@ -58,28 +69,28 @@ create_wordpress_container() {
 
   # Create wp-config.php
   echo "Configuring WordPress..."
-  lxc exec "$WP_CONTAINER_NAME" -- wp config create --path=/var/www/html --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASSWORD" --dbhost="$DB_CONTAINER_NAME.lxd" --allow-root > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- wp config create --path=/var/www/html --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASSWORD" --dbhost="$DB_CONTAINER_NAME.lxd" --allow-root > /dev/null 2>&1
 
   # Run WordPress installation
   echo "Running WordPress installation..."
-  lxc exec "$WP_CONTAINER_NAME" -- wp core install --path=/var/www/html --url="http://$WP_DOMAIN" --title="My WordPress Site" --admin_user="$ADMIN_USER" --admin_password="$ADMIN_PASS" --admin_email="$ADMIN_EMAIL" --allow-root > /dev/null 2>&1
+  lxc exec "$NEW_CONTAINER_NAME" -- wp core install --path=/var/www/html --url="http://$WP_DOMAIN" --title="My WordPress Site" --admin_user="$ADMIN_USER" --admin_password="$ADMIN_PASS" --admin_email="$ADMIN_EMAIL" --allow-root > /dev/null 2>&1
 
   # Fix permissions
-  fix_permissions "$WP_CONTAINER_NAME"
+  fix_permissions "$NEW_CONTAINER_NAME"
 
   # Configure Nginx
   echo "Configuring Nginx..."
-  lxc exec "$WP_CONTAINER_NAME" -- sudo mkdir -p /etc/nginx/templates
-  lxc file push nginx_wp_config.template "$WP_CONTAINER_NAME/etc/nginx/templates/nginx_wp_config.template"
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo mkdir -p /etc/nginx/templates
+  lxc file push nginx_wp_config.template "$NEW_CONTAINER_NAME/etc/nginx/templates/nginx_wp_config.template"
 
   # Generate Nginx config from template
-  lxc exec "$WP_CONTAINER_NAME" -- bash -c "export WP_DOMAIN=$WP_DOMAIN && envsubst '\$WP_DOMAIN' < /etc/nginx/templates/nginx_wp_config.template > /etc/nginx/sites-available/default"
+  lxc exec "$NEW_CONTAINER_NAME" -- bash -c "export WP_DOMAIN=$WP_DOMAIN && envsubst '\$WP_DOMAIN' < /etc/nginx/templates/nginx_wp_config.template > /etc/nginx/sites-available/default"
 
   # Enable Nginx site config
-  lxc exec "$WP_CONTAINER_NAME" -- sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
 
   # Restart Nginx
-  lxc exec "$WP_CONTAINER_NAME" -- sudo systemctl restart nginx
+  lxc exec "$NEW_CONTAINER_NAME" -- sudo systemctl restart nginx
 
-  echo "WordPress setup completed for $WP_DOMAIN!"
+  echo "WordPress setup completed for $WP_DOMAIN in container $NEW_CONTAINER_NAME!"
 }
