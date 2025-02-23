@@ -173,6 +173,33 @@ create_wordpress_container() {
         return 1
     fi
 
+
+    # Install WordPress
+    echo "Installing WordPress..."
+    if ! lxc exec "$NEW_CONTAINER_NAME" -- wp core install \
+        --path=/var/www/html \
+        --url="http://$WP_DOMAIN" \
+        --title="$WP_DOMAIN" \
+        --admin_user="$ADMIN_USER" \
+        --admin_password="$ADMIN_PASS" \
+        --admin_email="$ADMIN_EMAIL" \
+        --allow-root; then
+        echo "Error: Failed to install WordPress"
+        return 1
+    fi
+
+    
+
+
+    # Fix permissions
+    echo "Setting correct permissions..."
+    if type fix_permissions >/dev/null 2>&1; then
+        fix_permissions "$NEW_CONTAINER_NAME"
+    else
+        echo "Warning: fix_permissions function not found, skipping..."
+    fi
+
+    
      # Install and configure Redis plugin
     echo "Installing and configuring Redis Object Cache plugin..."
     if ! lxc exec "$NEW_CONTAINER_NAME" -- bash -c "
@@ -205,30 +232,6 @@ create_wordpress_container() {
         echo "✅ Redis cache is connected and working"
     else
         echo "Warning: Redis cache is not connected. Please check Redis configuration"
-    fi
-
-    # Install WordPress
-    echo "Installing WordPress..."
-    if ! lxc exec "$NEW_CONTAINER_NAME" -- wp core install \
-        --path=/var/www/html \
-        --url="http://$WP_DOMAIN" \
-        --title="$WP_DOMAIN" \
-        --admin_user="$ADMIN_USER" \
-        --admin_password="$ADMIN_PASS" \
-        --admin_email="$ADMIN_EMAIL" \
-        --allow-root; then
-        echo "Error: Failed to install WordPress"
-        return 1
-    fi
-
-
-
-    # Fix permissions
-    echo "Setting correct permissions..."
-    if type fix_permissions >/dev/null 2>&1; then
-        fix_permissions "$NEW_CONTAINER_NAME"
-    else
-        echo "Warning: fix_permissions function not found, skipping..."
     fi
 
     # Configure Nginx with dynamic PHP version
