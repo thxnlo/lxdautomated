@@ -1,6 +1,6 @@
 # lxdautomated
  
-# 🚀 LXD WordPress Automation - How `main.sh` Works
+# 🚀 LXD WordPress Automation - How it works
 
 This project automates the deployment of **WordPress** using **LXD containers**. The automation is handled by `main.sh`, which:
 
