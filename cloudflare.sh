@@ -69,40 +69,55 @@ add_cloudflare_record() {
     exit 1
   fi
 
+  # Create a new API token if needed
+  echo "This script will create a new DNS record for $DOMAIN with IP $MY_SERVER_IP"
+  echo "To do this, you need to create a proper API token with DNS edit permissions"
+  
+  # Give user option to continue or create a new token
+  read -p "Do you already have a proper API token with DNS edit permissions? (yes/no): " HAS_TOKEN
+  
+  if [[ "$HAS_TOKEN" != "yes" ]]; then
+    echo "Please follow these steps to create a new API token:"
+    echo "1. Go to https://dash.cloudflare.com/profile/api-tokens"
+    echo "2. Click 'Create Token'"
+    echo "3. Select 'Edit zone DNS' template"
+    echo "4. Under 'Zone Resources', select 'Include - Specific zone - $CF_ZONE_NAME'"
+    echo "5. Click 'Continue to summary' and then 'Create Token'"
+    echo "6. Copy the token and update your .env file with the new token"
+    echo "   Add this line to your .env file: CLOUDFLARE_API=your_new_token_here"
+    
+    read -p "Have you created a new API token? (yes/no): " CREATED_TOKEN
+    if [[ "$CREATED_TOKEN" != "yes" ]]; then
+      echo "Cannot continue without proper API token. Exiting."
+      exit 1
+    fi
+    
+    read -p "Enter your new API token: " NEW_TOKEN
+    if [ -n "$NEW_TOKEN" ]; then
+      CLOUDFLARE_API=$NEW_TOKEN
+      # Optionally update the .env file with the new token
+      sed -i "s/CLOUDFLARE_API=.*/CLOUDFLARE_API=$NEW_TOKEN/" .env
+      echo "Updated .env file with new API token"
+    else
+      echo "No token provided. Exiting."
+      exit 1
+    fi
+  fi
+
   # Get Cloudflare Zone ID for the root domain
   echo "Checking Cloudflare zone for the domain: $CF_ZONE_NAME"
   
-  # First try with API Key authentication
-  if [ ! -z "$CF_EMAIL" ]; then
-    echo "Using API Key authentication with email: $CF_EMAIL"
+  # Try with API Token authentication
+  echo "Using API Token authentication"
+  local ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones" \
+    -H "Authorization: Bearer $CLOUDFLARE_API" \
+    -H "Content-Type: application/json")
     
-    local ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones" \
-      -H "X-Auth-Email: $CF_EMAIL" \
-      -H "X-Auth-Key: $CLOUDFLARE_API" \
-      -H "Content-Type: application/json")
-      
-    if echo "$ZONE_RESPONSE" | jq -e '.success' &>/dev/null; then
-      AUTH_METHOD="API_KEY"
-    else
-      echo "API Key authentication failed. Error: $(echo "$ZONE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
-    fi
-  fi
-  
-  # If API Key fails or email not provided, try with API Token
-  if [ "$AUTH_METHOD" != "API_KEY" ]; then
-    echo "Trying API Token authentication"
-    
-    local ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones" \
-      -H "Authorization: Bearer $CLOUDFLARE_API" \
-      -H "Content-Type: application/json")
-      
-    if echo "$ZONE_RESPONSE" | jq -e '.success' &>/dev/null; then
-      AUTH_METHOD="API_TOKEN"
-    else
-      echo "API Token authentication failed. Error: $(echo "$ZONE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
-      echo "Please check your Cloudflare API credentials."
-      exit 1
-    fi
+  if ! echo "$ZONE_RESPONSE" | jq -e '.success' &>/dev/null; then
+    echo "API Token authentication failed. Error: $(echo "$ZONE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
+    echo "Full response: $ZONE_RESPONSE"
+    echo "Please verify your API token has the correct permissions."
+    exit 1
   fi
   
   # Get Zone ID from the response
@@ -113,66 +128,98 @@ add_cloudflare_record() {
     exit 1
   fi
 
+  echo "Found Zone ID: $ZONE_ID for $CF_ZONE_NAME"
+
   # Determine record name based on domain
   local RECORD_NAME
   if [ "$DOMAIN" = "$CF_ZONE_NAME" ]; then
     echo "Root domain detected."
-    RECORD_NAME="@"  # Root domain
+    RECORD_NAME="@"  # Root domain for the API
+    SEARCH_NAME="$CF_ZONE_NAME"  # But search using the full domain
   else
     # Handle full domain names vs. subdomains
     if [[ "$DOMAIN" == *".$CF_ZONE_NAME" ]]; then
       # Extract subdomain part
       RECORD_NAME="${DOMAIN%.$CF_ZONE_NAME}"
+      SEARCH_NAME="$DOMAIN"
     else
       RECORD_NAME="$DOMAIN"
+      SEARCH_NAME="$DOMAIN.$CF_ZONE_NAME"
     fi
   fi
   
-  echo "Using record name: $RECORD_NAME for domain: $DOMAIN"
+  echo "Using record name: $RECORD_NAME for domain: $DOMAIN (search name: $SEARCH_NAME)"
 
-  # Set the appropriate headers based on authentication method
-  local DNS_LIST_URL
-  local AUTH_HEADERS
-  
-  if [ "$AUTH_METHOD" = "API_KEY" ]; then
-    AUTH_HEADERS=(-H "X-Auth-Email: $CF_EMAIL" -H "X-Auth-Key: $CLOUDFLARE_API")
-    echo "Using API Key authentication method for DNS operations"
-  else
-    AUTH_HEADERS=(-H "Authorization: Bearer $CLOUDFLARE_API")
-    echo "Using API Token authentication method for DNS operations"
-  fi
+  # Set auth headers for API Token
+  local AUTH_HEADERS=(-H "Authorization: Bearer $CLOUDFLARE_API")
 
-  # Search for existing record - need different URL format for root domain
-  if [ "$RECORD_NAME" = "@" ]; then
-    DNS_LIST_URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$CF_ZONE_NAME"
-  else
-    if [[ "$DOMAIN" != *".$CF_ZONE_NAME" ]]; then
-      # For subdomains that don't include the zone name, append it
-      DNS_LIST_URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$DOMAIN.$CF_ZONE_NAME"
-    else
-      DNS_LIST_URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$DOMAIN"
-    fi
-  fi
-
-  echo "Querying DNS records at: $DNS_LIST_URL"
-  
   # Check if the DNS record already exists
+  echo "Checking for existing DNS records..."
+  local DNS_LIST_URL="https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$SEARCH_NAME"
+  echo "Querying: $DNS_LIST_URL"
+  
   local DNS_RESPONSE=$(curl -s -X GET "$DNS_LIST_URL" \
     "${AUTH_HEADERS[@]}" \
     -H "Content-Type: application/json")
     
   if ! echo "$DNS_RESPONSE" | jq -e '.success' &>/dev/null; then
     echo "Error retrieving DNS records: $(echo "$DNS_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
+    echo "Full response: $DNS_RESPONSE"
     exit 1
   fi
+
+  # Get existing record information
+  local DNS_RECORD_COUNT=$(echo "$DNS_RESPONSE" | jq -r '.result | length')
+  echo "Found $DNS_RECORD_COUNT existing record(s)"
   
-  local DNS_RECORD_ID=$(echo "$DNS_RESPONSE" | jq -r '.result[0].id')
-  local CURRENT_IP=$(echo "$DNS_RESPONSE" | jq -r '.result[0].content')
+  if [ "$DNS_RECORD_COUNT" -gt 0 ]; then
+    local DNS_RECORD_ID=$(echo "$DNS_RESPONSE" | jq -r '.result[0].id')
+    local CURRENT_IP=$(echo "$DNS_RESPONSE" | jq -r '.result[0].content')
+    echo "Existing record: ID=$DNS_RECORD_ID, Current IP=$CURRENT_IP"
+    
+    # Check if the IP is different before updating
+    if [ "$CURRENT_IP" = "$MY_SERVER_IP" ]; then
+      echo "DNS record for $DOMAIN already points to $MY_SERVER_IP. No update needed."
+    else
+      echo "Updating DNS record from $CURRENT_IP to $MY_SERVER_IP..."
+      
+      # For API tokens we need to use PATCH to update only the content
+      local UPDATE_RESPONSE=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID" \
+        "${AUTH_HEADERS[@]}" \
+        -H "Content-Type: application/json" \
+        --data "{\"content\":\"$MY_SERVER_IP\"}")
+        
+      if echo "$UPDATE_RESPONSE" | jq -e '.success' &>/dev/null; then
+        echo "Successfully updated DNS record for $DOMAIN"
+      else
+        echo "Failed to update DNS record: $(echo "$UPDATE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
+        echo "Full response: $UPDATE_RESPONSE"
+        
+        # If the record exists but we can't update it, we can try to delete and recreate
+        echo "Attempting to delete and recreate the record..."
+        
+        # Delete the existing record
+        local DELETE_RESPONSE=$(curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID" \
+          "${AUTH_HEADERS[@]}" \
+          -H "Content-Type: application/json")
+          
+        if echo "$DELETE_RESPONSE" | jq -e '.success' &>/dev/null; then
+          echo "Successfully deleted existing DNS record."
+          # Now create a new record (code below will handle this)
+          DNS_RECORD_COUNT=0
+        else
+          echo "Failed to delete DNS record: $(echo "$DELETE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
+          echo "Full response: $DELETE_RESPONSE"
+          exit 1
+        fi
+      fi
+    fi
+  else
+    echo "No existing DNS record found. Creating new record."
+  fi
 
-  echo "DNS lookup results: Record ID: $DNS_RECORD_ID, Current IP: $CURRENT_IP"
-
-  # Create or update the record
-  if [ -z "$DNS_RECORD_ID" ]; then
+  # Create new record if needed
+  if [ "$DNS_RECORD_COUNT" -eq 0 ]; then
     echo "Adding DNS record for $DOMAIN pointing to $MY_SERVER_IP..."
     
     local CREATE_RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
@@ -186,38 +233,6 @@ add_cloudflare_record() {
       echo "Failed to add DNS record: $(echo "$CREATE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
       echo "Full response: $CREATE_RESPONSE"
       exit 1
-    fi
-  else
-    # Check if the IP is different before updating
-    if [ "$CURRENT_IP" = "$MY_SERVER_IP" ]; then
-      echo "DNS record for $DOMAIN already points to $MY_SERVER_IP. No update needed."
-    else
-      echo "Updating existing DNS record for $DOMAIN from $CURRENT_IP to $MY_SERVER_IP..."
-      
-      local UPDATE_RESPONSE=$(curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID" \
-        "${AUTH_HEADERS[@]}" \
-        -H "Content-Type: application/json" \
-        --data "{\"content\":\"$MY_SERVER_IP\"}")
-        
-      if echo "$UPDATE_RESPONSE" | jq -e '.success' &>/dev/null; then
-        echo "Successfully updated DNS record for $DOMAIN"
-      else
-        echo "Failed to update DNS record with PATCH. Trying PUT method..."
-        
-        # Try PUT method as fallback
-        UPDATE_RESPONSE=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID" \
-          "${AUTH_HEADERS[@]}" \
-          -H "Content-Type: application/json" \
-          --data "{\"type\":\"A\",\"name\":\"$RECORD_NAME\",\"content\":\"$MY_SERVER_IP\",\"ttl\":120,\"proxied\":$PROXIED}")
-          
-        if echo "$UPDATE_RESPONSE" | jq -e '.success' &>/dev/null; then
-          echo "Successfully updated DNS record for $DOMAIN using PUT method"
-        else
-          echo "Failed to update DNS record: $(echo "$UPDATE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')"
-          echo "Full response: $UPDATE_RESPONSE"
-          exit 1
-        fi
-      fi
     fi
   fi
 }
